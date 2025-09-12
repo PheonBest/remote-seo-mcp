@@ -42,6 +42,7 @@ This service provides an API to retrieve SEO data from Ahrefs. It handles the en
 
 - Python 3.10 or higher
 - CapSolver account and API key ([register here](https://dashboard.capsolver.com/passport/register?inviteCode=1dTH7WQSfHD0))
+- Auth0 account (if using OAuth authentication)
 
 ### Install from PyPI
 
@@ -72,11 +73,21 @@ uv pip install seo-mcp
    uv pip install -e .
    ```
 
-3. Set the CapSolver API key:
+3. Set the required environment variables:
 
    ```bash
+   # Required for Ahrefs data extraction
    export CAPSOLVER_API_KEY="your-capsolver-api-key"
+   
+   # Required for Auth0 OAuth (if using authentication)
+   export AUTH0_DOMAIN="your-tenant.us.auth0.com"
+   export AUTH0_AUDIENCE="https://your-api-identifier"
+   export AUTH0_CLIENT_ID="your-client-id"
+   export AUTH0_CLIENT_SECRET="your-client-secret"
+   export RESOURCE_SERVER_URL="http://localhost:10000"
    ```
+   
+   Alternatively, create a `.env` file in the project root with these variables.
 
 ## Usage
 
@@ -215,6 +226,44 @@ git clone https://github.com/cnych/seo-mcp.git
 cd seo-mcp
 uv sync
 ```
+
+## Authentication with Auth0
+
+This service supports OAuth 2.0 authentication with Auth0 and Dynamic Client Registration (DCR) for Claude.ai compatibility. To set up Auth0 for your MCP server:
+
+1. **Create an Auth0 Account**
+   - Sign up at [auth0.com](https://auth0.com)
+
+2. **Enable OIDC Dynamic Application Registration**
+   - Navigate to Auth0 Dashboard → Tenant Settings
+   - Go to Advanced Settings tab
+   - Find "Enable OIDC Dynamic Application Registration" and enable it
+
+3. **Configure Auth0 API**
+   - Create a new API in the Auth0 dashboard
+   - Set a meaningful name and identifier (this will be your `AUTH0_AUDIENCE`)
+   - Enable RBAC and Add Permissions in the Access Token
+
+4. **Create Auth0 Application**
+   - Create a new "Regular Web Application"
+   - In Settings, note the Domain, Client ID, and Client Secret
+   - Add `http://localhost:10000/callback` to the Allowed Callback URLs
+   - Add `http://localhost:10000` to the Allowed Web Origins
+
+5. **Grant Management API Permissions** (For promoting connections to domain-level)
+   - Create a Machine to Machine Application
+   - Authorize it for the Auth0 Management API with `read:connections` and `update:connections` scopes
+   - Use the Management API to promote connections to domain-level for third-party authentication
+
+6. **Set Environment Variables**
+   - Set environment variables as shown in the Installation section
+   - The server will require authentication for all MCP endpoints
+
+When Claude.ai connects to your MCP server, it will automatically:
+1. Discover OAuth endpoints via `/.well-known/oauth-authorization-server`
+2. Register as a dynamic client via `/register`
+3. Create an Auth0 application automatically
+4. Initiate the OAuth flow for user authentication
 
 ## How it works
 
