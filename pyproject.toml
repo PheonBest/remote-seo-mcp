@@ -21,6 +21,8 @@ dependencies = [
     "fastmcp>=2.12.2",
     "requests>=2.32.3",
     "pydantic>=2.5.0",
+    "fastapi>=0.104.0",
+    "mcpauth>=0.1.1",
     "pydantic-core>=2.14.0"
 ]
 
