@@ -20,7 +20,7 @@ from seo_mcp.traffic import check_traffic
 AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN", "your-tenant.us.auth0.com")
 AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE", "https://your-api-identifier")
 RESOURCE_SERVER_URL = os.getenv(
-    "RESOURCE_SERVER_URL", "https://your-domain.example.com/mcp")
+    "RESOURCE_SERVER_URL", "http://localhost:10000/mcp")
 
 
 # Configure JWT verification
@@ -177,7 +177,7 @@ async def health_check(request):
 
 def main():
     """Run the MCP server"""
-    mcp.run(transport="http", host="0.0.0.0", port=8000)
+    mcp.run(transport="http", host="0.0.0.0", port=10000)
 
 
 if __name__ == "__main__":
