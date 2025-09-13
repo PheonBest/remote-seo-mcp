@@ -3,3 +3,5 @@ SEO MCP - A FastMCP service for retrieving SEO information for any domain using 
 """
 
 __version__ = "0.2.4"
+
+from .server import main

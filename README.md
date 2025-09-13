@@ -78,7 +78,7 @@ uv pip install seo-mcp
    ```bash
    # Required for Ahrefs data extraction
    export CAPSOLVER_API_KEY="your-capsolver-api-key"
-   
+
    # Required for Auth0 OAuth (if using authentication)
    export AUTH0_DOMAIN="your-tenant.us.auth0.com"
    export AUTH0_AUDIENCE="https://your-api-identifier"
@@ -86,7 +86,7 @@ uv pip install seo-mcp
    export AUTH0_CLIENT_SECRET="your-client-secret"
    export RESOURCE_SERVER_URL="http://localhost:10000"
    ```
-   
+
    Alternatively, create a `.env` file in the project root with these variables.
 
 ## Usage
@@ -225,45 +225,45 @@ For development:
 git clone https://github.com/cnych/seo-mcp.git
 cd seo-mcp
 uv sync
+uv run main.py
 ```
 
-## Authentication with Auth0
+For testing:
 
-This service supports OAuth 2.0 authentication with Auth0 and Dynamic Client Registration (DCR) for Claude.ai compatibility. To set up Auth0 for your MCP server:
+```
+npx @modelcontextprotocol/inspector --url http://localhost:10000
+```
 
-1. **Create an Auth0 Account**
-   - Sign up at [auth0.com](https://auth0.com)
+## Authentication with Google OAuth 2.0
 
-2. **Enable OIDC Dynamic Application Registration**
-   - Navigate to Auth0 Dashboard → Tenant Settings
-   - Go to Advanced Settings tab
-   - Find "Enable OIDC Dynamic Application Registration" and enable it
+This service supports OAuth 2.0 authentication with Auth0 without. Claude.ai compatibility is ensured by an OAuth proxy handled by fastmcp internally. To set up Google OAuth for your MCP server:
 
-3. **Configure Auth0 API**
-   - Create a new API in the Auth0 dashboard
-   - Set a meaningful name and identifier (this will be your `AUTH0_AUDIENCE`)
-   - Enable RBAC and Add Permissions in the Access Token
+Create an OAuth 2.0 Client ID in your Google Cloud Console to get the credentials needed for authentication:
 
-4. **Create Auth0 Application**
-   - Create a new "Regular Web Application"
-   - In Settings, note the Domain, Client ID, and Client Secret
-   - Add `http://localhost:10000/callback` to the Allowed Callback URLs
-   - Add `http://localhost:10000` to the Allowed Web Origins
+1. Navigate to OAuth Consent Screen
+   Go to the Google Cloud Console and select your project (or create a new one).First, configure the OAuth consent screen by navigating to APIs & Services → OAuth consent screen. Choose “External” for testing or “Internal” for G Suite organizations.
 
-5. **Grant Management API Permissions** (For promoting connections to domain-level)
-   - Create a Machine to Machine Application
-   - Authorize it for the Auth0 Management API with `read:connections` and `update:connections` scopes
-   - Use the Management API to promote connections to domain-level for third-party authentication
+2. Create OAuth 2.0 Client ID
+   Navigate to APIs & Services → Credentials and click ”+ CREATE CREDENTIALS” → “OAuth client ID”.Configure your OAuth client:
 
-6. **Set Environment Variables**
-   - Set environment variables as shown in the Installation section
-   - The server will require authentication for all MCP endpoints
+- Application type: Web application
+- Name: Choose a descriptive name (e.g., “FastMCP Server”)
+- Authorized JavaScript origins: Add your server’s base URL (e.g., http://localhost:8000)
+- Authorized redirect URIs: Add your server URL + /auth/callback (e.g., http://localhost:8000/auth/callback)
 
-When Claude.ai connects to your MCP server, it will automatically:
-1. Discover OAuth endpoints via `/.well-known/oauth-authorization-server`
-2. Register as a dynamic client via `/register`
-3. Create an Auth0 application automatically
-4. Initiate the OAuth flow for user authentication
+> The redirect URI must match exactly. The default path is /auth/callback, but you can customize it using the redirect_path parameter. For local development, Google allows http://localhost URLs with various ports. For production, you must use HTTPS.
+
+> If you want to use a custom callback path (e.g., /auth/google/callback), make sure to set the same path in both your Google OAuth Client settings and the redirect_path parameter when configuring the GoogleProvider.
+
+3. Save Your Credentials
+   After creating the client, you’ll receive:
+
+- Client ID: A string ending in .apps.googleusercontent.com
+- Client Secret: A string starting with GOCSPX-
+
+Download the JSON credentials or copy these values securely.
+
+4. Configure environment variables in .env
 
 ## How it works
 

@@ -2,8 +2,8 @@
 SEO MCP Server: A free SEO tool MCP (Model Control Protocol) service based on Ahrefs data.
 Includes features such as backlinks, keyword ideas, and more.
 """
+from fastmcp.server.auth.providers.google import GoogleProvider
 import os
-import re
 import time
 import logging
 import urllib.parse
@@ -11,14 +11,9 @@ from typing import Dict, List, Optional, Any
 
 import requests
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
 from starlette.responses import JSONResponse
-import uvicorn
 
 from fastmcp import FastMCP
-from mcpauth import MCPAuth
-from mcpauth.config import AuthServerType
-from mcpauth.utils import fetch_server_config
 
 from seo_mcp.backlinks import get_backlinks, load_signature_from_cache, get_signature_and_overview
 from seo_mcp.keywords import get_keyword_ideas, get_keyword_difficulty
@@ -31,30 +26,46 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Environment variables
-AUTH0_DOMAIN: str = os.getenv("AUTH0_DOMAIN", "your-tenant.us.auth0.com")
-AUTH0_AUDIENCE: str = os.getenv(
-    "AUTH0_AUDIENCE", "https://your-api-identifier")
-AUTH0_CLIENT_ID: str = os.getenv("AUTH0_CLIENT_ID", "your-client-id")
-AUTH0_CLIENT_SECRET: str = os.getenv(
-    "AUTH0_CLIENT_SECRET", "your-client-secret")
-RESOURCE_SERVER_URL: str = os.getenv(
-    "RESOURCE_SERVER_URL", "http://localhost:10000")
+GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "your-client-id")
+GOOGLE_CLIENT_SECRET: str = os.getenv(
+    "GOOGLE_CLIENT_SECRET", "your-client-secret")
+BASE_URL: str = os.getenv("BASE_URL", "http://localhost:10000")
 CAPSOLVER_API_KEY: Optional[str] = os.getenv("CAPSOLVER_API_KEY")
+PORT: int = int(os.getenv("PORT", 10000))
 
-# Clean domain
-AUTH0_DOMAIN = re.sub(r"^https?://", "", AUTH0_DOMAIN.strip().rstrip("/"))
-AUTH0_BASE_URL: str = f"https://{AUTH0_DOMAIN}"
 
-# Initialize MCPAuth
-mcp_auth: MCPAuth = MCPAuth(
-    server=fetch_server_config(
-        f"{AUTH0_BASE_URL}/",
-        type=AuthServerType.OAUTH
-    )
+# The GoogleProvider handles Google's token format and validation
+auth_provider = GoogleProvider(
+    client_id=GOOGLE_CLIENT_ID,  # Your Google OAuth Client ID
+    client_secret=GOOGLE_CLIENT_SECRET,  # Your Google OAuth Client Secret
+    base_url=BASE_URL,  # Must match your OAuth configuration
+    required_scopes=[  # Request user information
+        "openid",
+        "https://www.googleapis.com/auth/userinfo.email",
+    ],
+    # redirect_path="/auth/callback" # Default value, customize if needed
 )
 
 # MCP instance
-mcp: FastMCP = FastMCP("SEO MCP")
+mcp: FastMCP = FastMCP("SEO MCP", auth=auth_provider)
+
+# Add a protected tool to test authentication
+
+
+@mcp.tool
+async def get_user_info() -> dict:
+    """Returns information about the authenticated Google user."""
+    from fastmcp.server.dependencies import get_access_token
+
+    token = get_access_token()
+    # The GoogleProvider stores user data in token claims
+    return {
+        "google_id": token.claims.get("sub"),
+        "email": token.claims.get("email"),
+        "name": token.claims.get("name"),
+        "picture": token.claims.get("picture"),
+        "locale": token.claims.get("locale")
+    }
 
 
 def get_capsolver_token(site_url: str) -> Optional[str]:
@@ -143,48 +154,13 @@ def keyword_difficulty(keyword: str, country: str = "us") -> Optional[Dict[str, 
 
 
 @mcp.custom_route("/health", methods=["GET"])
-async def health_check(_: Request) -> JSONResponse:
+async def health_check(_) -> JSONResponse:
     return JSONResponse({"status": "healthy", "service": "mcp-server"})
 
 
-def main() -> None:
-    """Run the MCP server with OAuth support"""
-    app: FastAPI = FastAPI(title="SEO MCP Server")
-    api_mcp: FastMCP = FastMCP.from_fastapi(app=app, name="SEO MCP")
-
-    bearer_auth = mcp_auth.bearer_auth_middleware(
-        "jwt", required_scopes=["openid", "profile", "email"]
-    )
-
-    mcp_app = api_mcp.http_app(path="/mcp")
-    mcp_app.dependency_overrides = getattr(mcp_app, "dependency_overrides", {})
-    mcp_app.dependency_overrides[None] = bearer_auth
-
-    app.mount("/mcp", mcp_app)
-
-    # CORS
-    from fastapi.middleware.cors import CORSMiddleware
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
-    @app.get("/health")
-    async def health_endpoint() -> Dict[str, str]:
-        return {"status": "healthy", "service": "mcp-server"}
-
-    # OAuth metadata route
-    app.add_route("/.well-known/oauth-authorization-server",
-                  mcp_auth.metadata_route(), methods=["GET"])
-
-    @app.post("/register")
-    async def register(request: Request) -> JSONResponse:
-        return await mcp_auth.register(request)
-
-    uvicorn.run(app, host="0.0.0.0", port=10000)
+def main():
+    """Run the MCP server"""
+    mcp.run(transport="http", port=PORT)
 
 
 if __name__ == "__main__":
