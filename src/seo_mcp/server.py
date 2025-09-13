@@ -8,7 +8,7 @@ import os
 import time
 import logging
 import urllib.parse
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Literal
 
 import requests
 from dotenv import load_dotenv
@@ -20,13 +20,14 @@ from fastmcp import FastMCP
 from fastmcp.experimental.sampling.handlers.openai import OpenAISamplingHandler
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.exceptions import ToolError
-from fastmcp.server import Transport
 
 from seo_mcp.backlinks import get_backlinks, load_signature_from_cache, get_signature_and_overview
 from seo_mcp.keywords import get_keyword_ideas, get_keyword_difficulty
 from seo_mcp.traffic import check_traffic
 from fastmcp.client.sampling import ServerSamplingHandler
 from mcp.server.lowlevel.server import LifespanResultT
+
+Transport = Literal["stdio", "http", "sse", "streamable-http"]
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
