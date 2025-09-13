@@ -228,9 +228,10 @@ def main():
     if IS_REMOTE:
         logger.info(
             f"Starting SEO MCP server in REMOTE mode on port {PORT}")
+        mcp.run(transport=transport, port=PORT)
     else:
-        logger.info(f"Starting SEO MCP server in LOCAL mode on port {PORT}...")
-    mcp.run(transport=transport, port=PORT)
+        logger.info(f"Starting SEO MCP server in LOCAL mode on stdio")
+        mcp.run(transport=transport)
 
 
 if __name__ == "__main__":

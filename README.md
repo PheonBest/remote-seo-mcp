@@ -265,6 +265,26 @@ Download the JSON credentials or copy these values securely.
 
 4. Configure environment variables in .env
 
+## Deployment
+
+You can deploy to Netlify or vercel. To deploy to render:
+
+1. Create a new web service on Render
+2. Connect your GitHub repository
+3. Set build command to `uv sync --frozen && uv cache prune --ci`
+4. Set start command to `uv run main.py`
+5. Set health check path to `/health`
+6. Add the required environment variables in the Render dashboard:
+
+- ALLOWED_EMAILS or ALLOWED_DOMAINS or ALLOWED_SUB
+- BASE_URL: https://your-render-service.onrender.com
+- CAPSOLVER_API_KEY
+- GOOGLE_CLIENT_ID
+- GOOGLE_CLIENT_SECRET
+- IS_REMOTE: true
+- OPENAI_API_KEY (if using sampling fallback)
+- OPENAI_BASE_URL (if using sampling fallback)
+
 ## How it works
 
 1. The user sends a request through MCP
