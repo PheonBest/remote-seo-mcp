@@ -3,6 +3,7 @@ SEO MCP Server: A free SEO tool MCP (Model Control Protocol) service based on Ah
 Includes features such as backlinks, keyword ideas, and more.
 """
 from fastmcp.server.auth.providers.google import GoogleProvider
+from fastmcp.server.dependencies import get_access_token
 import os
 import time
 import logging
@@ -12,12 +13,20 @@ from typing import Dict, List, Optional, Any
 import requests
 from dotenv import load_dotenv
 from starlette.responses import JSONResponse
+from starlette.requests import Request
 
+from openai import OpenAI
 from fastmcp import FastMCP
+from fastmcp.experimental.sampling.handlers.openai import OpenAISamplingHandler
+from fastmcp.server.middleware import Middleware, MiddlewareContext
+from fastmcp.exceptions import ToolError
+from fastmcp.server import Transport
 
 from seo_mcp.backlinks import get_backlinks, load_signature_from_cache, get_signature_and_overview
 from seo_mcp.keywords import get_keyword_ideas, get_keyword_difficulty
 from seo_mcp.traffic import check_traffic
+from fastmcp.client.sampling import ServerSamplingHandler
+from mcp.server.lowlevel.server import LifespanResultT
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -26,36 +35,92 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Environment variables
+IS_REMOTE: bool = os.getenv("IS_REMOTE", "false").lower() == "true"
 GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "your-client-id")
 GOOGLE_CLIENT_SECRET: str = os.getenv(
     "GOOGLE_CLIENT_SECRET", "your-client-secret")
 BASE_URL: str = os.getenv("BASE_URL", "http://localhost:10000")
 CAPSOLVER_API_KEY: Optional[str] = os.getenv("CAPSOLVER_API_KEY")
+OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "your-openrouter-api-key")
+OPENAI_BASE_URL: str = os.getenv(
+    "OPENAI_BASE_URL", "https://api.openai.com/v1")
 PORT: int = int(os.getenv("PORT", 10000))
+
+# Restrict access to specific Google Workspace domains, subs, or emails
+ALLOWED_DOMAINS: set[str] = {domain.strip() for domain in os.getenv(
+    "ALLOWED_DOMAINS", "").split(",") if domain.strip()}
+ALLOWED_SUB: set[str] = {sub.strip() for sub in os.getenv(
+    "ALLOWED_SUB", "").split(",") if sub.strip()}
+ALLOWED_EMAILS: set[str] = {email.strip().lower() for email in os.getenv(
+    "ALLOWED_EMAILS", "").split(",") if email.strip()}
+
+
+# Middleware to restrict access based on allowed emails
+class AuthMiddleware(Middleware):
+    async def on_request(self, context: MiddlewareContext, call_next):
+        # Extract email from your access token
+        token = get_access_token()
+        if token:
+            authorize(token.claims)
+
+        # Allow the chain to continue
+        return await call_next(context)
+
+
+def authorize(claims: Dict[str, Any]) -> None:
+    email: Optional[str] = claims.get("email")
+    hd: Optional[str] = claims.get("hd")  # Hosted domain
+    sub: Optional[str] = claims.get("sub")  # Subject (user ID)
+
+    if ALLOWED_EMAILS and email and email.lower() in ALLOWED_EMAILS:
+        return
+
+    if ALLOWED_DOMAINS and hd and hd in ALLOWED_DOMAINS:
+        return
+
+    if ALLOWED_SUB and sub and sub in ALLOWED_SUB:
+        return
+
+    logger.warning(
+        f"Unauthorized access attempt by email: {email}, domain: {hd}, sub: {sub}")
+    raise ToolError("Unauthorized access")
 
 
 # The GoogleProvider handles Google's token format and validation
 auth_provider = GoogleProvider(
-    client_id=GOOGLE_CLIENT_ID,  # Your Google OAuth Client ID
-    client_secret=GOOGLE_CLIENT_SECRET,  # Your Google OAuth Client Secret
-    base_url=BASE_URL,  # Must match your OAuth configuration
-    required_scopes=[  # Request user information
+    client_id=GOOGLE_CLIENT_ID,
+    client_secret=GOOGLE_CLIENT_SECRET,
+    base_url=BASE_URL,
+    required_scopes=[
         "openid",
         "https://www.googleapis.com/auth/userinfo.email",
     ],
-    # redirect_path="/auth/callback" # Default value, customize if needed
 )
 
-# MCP instance
-mcp: FastMCP = FastMCP("SEO MCP", auth=auth_provider)
+sampling_handller: ServerSamplingHandler[LifespanResultT] = OpenAISamplingHandler(
+    default_model="google/gemini-2.5-flash",
+    client=OpenAI(
+        api_key=OPENAI_API_KEY,
+        base_url=OPENAI_BASE_URL
+    )
+)
 
-# Add a protected tool to test authentication
+if IS_REMOTE:
+    transport: Transport = "streamable-http"
+    mcp: FastMCP = FastMCP(
+        "SEO MCP",
+        sampling_handler=sampling_handller,
+        auth=auth_provider,
+        middleware=[AuthMiddleware()]
+    )
+else:
+    transport: Transport = "stdio"
+    mcp: FastMCP = FastMCP("SEO MCP", sampling_handler=sampling_handller)
 
 
 @mcp.tool
 async def get_user_info() -> dict:
     """Returns information about the authenticated Google user."""
-    from fastmcp.server.dependencies import get_access_token
 
     token = get_access_token()
     # The GoogleProvider stores user data in token claims
@@ -64,12 +129,11 @@ async def get_user_info() -> dict:
         "email": token.claims.get("email"),
         "name": token.claims.get("name"),
         "picture": token.claims.get("picture"),
-        "locale": token.claims.get("locale")
+        "locale": token.claims.get("locale"),
     }
 
 
 def get_capsolver_token(site_url: str) -> Optional[str]:
-    """Solve captcha using CapSolver and return verification token"""
     if not CAPSOLVER_API_KEY:
         return None
 
@@ -79,8 +143,8 @@ def get_capsolver_token(site_url: str) -> Optional[str]:
             "type": "AntiTurnstileTaskProxyLess",
             "websiteKey": "0x4AAAAAAAAzi9ITzSN9xKMi",
             "websiteURL": site_url,
-            "metadata": {"action": ""}
-        }
+            "metadata": {"action": ""},
+        },
     }
 
     res: requests.Response = requests.post(
@@ -160,7 +224,12 @@ async def health_check(_) -> JSONResponse:
 
 def main():
     """Run the MCP server"""
-    mcp.run(transport="http", port=PORT)
+    if IS_REMOTE:
+        logger.info(
+            f"Starting SEO MCP server in REMOTE mode on port {PORT}")
+    else:
+        logger.info(f"Starting SEO MCP server in LOCAL mode on port {PORT}...")
+    mcp.run(transport=transport, port=PORT)
 
 
 if __name__ == "__main__":
