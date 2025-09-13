@@ -40,7 +40,7 @@ OPENAI_BASE_URL: str = os.getenv(
 HOST: str = os.getenv("HOST", "0.0.0.0")  # Bind to all interfaces by default
 PORT: int = int(os.getenv("PORT", 10000))
 
-sampling_handler: ServerSamplingHandler[LifespanResultT] = OpenAISamplingHandler(
+sampling_handler: ServerSamplingHandler = OpenAISamplingHandler(
     default_model="google/gemini-2.5-flash",
     client=OpenAI(
         api_key=OPENAI_API_KEY,
@@ -94,6 +94,7 @@ def get_capsolver_token(site_url: str) -> Optional[str]:
         if status == "ready":
             return resp.get("solution", {}).get("token")
         if status == "failed" or resp.get("errorId"):
+            logging.error(f"CAPSOLVER error: {resp}")
             return None
 
 
@@ -105,12 +106,14 @@ def get_backlinks_list(domain: str) -> Optional[Dict[str, Any]]:
         site_url: str = f"https://ahrefs.com/backlink-checker/?input={domain}&mode=subdomains"
         token: Optional[str] = get_capsolver_token(site_url)
         if not token:
+            logging.error(f"Failed to get verification token for domain: {domain}")
             raise Exception(
                 f"Failed to get verification token for domain: {domain}")
 
         signature, valid_until, overview_data = get_signature_and_overview(
             token, domain)
         if not signature or not valid_until:
+            logging.error(f"Failed to get signature for domain: {domain}")
             raise Exception(f"Failed to get signature for domain: {domain}")
 
     backlinks: List[Dict[str, Any]] = get_backlinks(
